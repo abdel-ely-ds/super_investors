@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/new_logo.png" alt="Super Investors" width="560" />
+  <img src="docs/logo.png" alt="Super Investors" width="560" />
 </p>
 
 <p align="center">
