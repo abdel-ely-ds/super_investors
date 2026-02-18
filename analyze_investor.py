@@ -184,6 +184,8 @@ def main():
     parser.add_argument("--topk", "-k", type=int, default=5)
     parser.add_argument("--list", "-l", action="store_true")
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument("--after-year", type=int, default=None, metavar="YEAR",
+                        help="Use only stocks first bought after this year (e.g. 2015 => 2016+)")
     args = parser.parse_args()
     if args.list:
         print(f"\n  {BOLD}Available investors (cached in stats/):{RESET}\n")
@@ -198,6 +200,13 @@ def main():
     stats = load_or_fetch_stats(args.investor)
     stats.replace([np.inf, -np.inf], np.nan, inplace=True)
     stats = stats.dropna(subset=[f"irr_{args.mode}"])
+    if args.after_year is not None:
+        buy_year = stats["period"].str.extract(r"(\d{4})", expand=False).astype(int)
+        stats = stats.loc[buy_year > args.after_year].copy()
+        if stats.empty:
+            print(f"  {DIM}No trades with first buy after {args.after_year}.{RESET}\n")
+            return
+        print(f"  {DIM}Filtered to {len(stats)} trades (first buy after {args.after_year}){RESET}\n")
     stats = enrich_stats(stats)
     print_overview(args.investor, stats, args.mode)
     print_top_trades(stats, args.mode, args.topk)

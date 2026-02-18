@@ -60,11 +60,16 @@ SORTABLE_METRICS = [
 ]
 
 
-def build_investor_stats(mode: str = "avg") -> pd.DataFrame:
+def build_investor_stats(mode: str = "avg", after_year: int | None = None) -> pd.DataFrame:
     rows = []
     for csv_path in sorted(STATS_DIR.glob("*.csv")):
         investor_name = csv_path.stem
         df = pd.read_csv(csv_path)
+        if df.empty:
+            continue
+        if after_year is not None and "period" in df.columns:
+            buy_year = df["period"].str.extract(r"(\d{4})", expand=False).astype(int)
+            df = df.loc[buy_year > after_year]
         if df.empty:
             continue
         rows.append({
@@ -129,11 +134,14 @@ DISPLAY_COLS = [
 ]
 
 
-def print_header(metric: str, mode: str, min_trades: int, total: int):
+def print_header(metric: str, mode: str, min_trades: int, total: int, after_year: int | None = None):
     label = METRIC_LABELS.get(metric, metric)
     print()
     print(f"  {BOLD}{CYAN}RANKING BY{RESET}  {BOLD}{label}{RESET}")
-    print(f"  {DIM}mode={mode}  min_trades={min_trades}  investors={total}{RESET}")
+    sub = f"mode={mode}  min_trades={min_trades}  investors={total}"
+    if after_year is not None:
+        sub += f"  after_year={after_year}"
+    print(f"  {DIM}{sub}{RESET}")
     print()
 
 
@@ -196,12 +204,14 @@ def main():
     parser.add_argument("--min-trades", type=int, default=5)
     parser.add_argument("--topk", "-k", type=int, default=3)
     parser.add_argument("--list-metrics", action="store_true")
+    parser.add_argument("--after-year", type=int, default=None, metavar="YEAR",
+                        help="Use only stocks first bought after this year (e.g. 2015 => 2016+)")
     args = parser.parse_args()
     if args.list_metrics:
         for m in SORTABLE_METRICS:
             print(f"  - {m}")
         return
-    stats = build_investor_stats(mode=args.mode)
+    stats = build_investor_stats(mode=args.mode, after_year=args.after_year)
     stats = stats[stats["Num_Trades"] >= args.min_trades]
     stats.replace([np.inf, -np.inf], np.nan, inplace=True)
     ascending_for_losers = args.metric == "Median_Return_Losers"
@@ -209,7 +219,7 @@ def main():
     k = args.topk
     top = sorted_df.head(k) if not ascending_for_losers else sorted_df.tail(k).iloc[::-1]
     flop = sorted_df.tail(k).iloc[::-1] if not ascending_for_losers else sorted_df.head(k)
-    print_header(args.metric, args.mode, args.min_trades, len(stats))
+    print_header(args.metric, args.mode, args.min_trades, len(stats), args.after_year)
     print_ranking_block(f"TOP {k}", top, args.metric, is_top=True)
     print_ranking_block(f"FLOP {k}", flop, args.metric, is_top=False)
 
