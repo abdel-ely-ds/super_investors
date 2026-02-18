@@ -155,7 +155,7 @@ We cannot always fetch price data from Yahoo Finance (e.g. delisted tickers, rat
 
 ---
 
-## Support
+## Support ❤️
 
 If this project is useful to you, please **star the repo** on GitHub — it helps others discover it.
 
