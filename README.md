@@ -11,10 +11,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/YOUR_USERNAME/super_investors"><img src="https://img.shields.io/github/stars/YOUR_USERNAME/super_investors?style=flat-square" alt="GitHub stars" /></a>
+  <a href="https://github.com/abdel-ely-ds/super_investors"><img src="https://img.shields.io/github/stars/abdel-ely-ds/super_investors?style=flat-square" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT" /></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10+-blue?style=flat-square" alt="Python 3.10+" /></a>
 </p>
+
 
 ---
 
