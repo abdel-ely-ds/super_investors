@@ -26,6 +26,7 @@
 - [Commands](#commands)
 - [Data](#data)
 - [Estimation scenarios](#estimation-scenarios)
+- [Caveats](#caveats)
 - [License](#license)
 
 ---
@@ -144,6 +145,12 @@ Use with **rank** and **analyze** to stress-test or compare:
 python rank_investors.py --mode best
 python analyze_investor.py "Warren Buffett" --mode worst
 ```
+
+---
+
+## Caveats
+
+We cannot always fetch price data from Yahoo Finance (e.g. delisted tickers, rate limits, or missing history). When that happens, **those stocks are skipped** and only positions with valid prices are used. As a result, stats (returns, win rate, rankings) can be based on a subset of an investor’s actual portfolio and may not reflect their full track record. Keep this in mind when comparing investors or interpreting metrics.
 
 ---
 

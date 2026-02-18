@@ -39,7 +39,7 @@ def color_pct(val: float, width: int = 8, inverse: bool = False) -> str:
 def load_or_fetch_stats(investor_name: str) -> pd.DataFrame:
     cache = STATS_DIR / f"{investor_name}.csv"
     if cache.exists():
-        print(f"  {DIM}Reading cached stats from {cache}{RESET}")
+        print(f"  {DIM}Reading cached stats ({cache.name}){RESET}")
         return pd.read_csv(cache)
     print(f"  Fetching activity for {BOLD}{investor_name}{RESET} …")
     df = get_investor_activity(investor_name)
@@ -51,7 +51,7 @@ def load_or_fetch_stats(investor_name: str) -> pd.DataFrame:
     stats = compute_stats(df)
     STATS_DIR.mkdir(exist_ok=True)
     stats.to_csv(cache, index=False)
-    print(f"  {DIM}Cached to {cache}{RESET}\n")
+    print(f"  {DIM}Cached ({cache.name}){RESET}\n")
     return stats
 
 

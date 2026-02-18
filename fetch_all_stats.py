@@ -55,7 +55,7 @@ def main():
     total = len(names)
     skipped = success = failed = 0
     print(f"\n  {BOLD}{CYAN}Fetching stats for {total} investors{RESET}")
-    print(f"  {DIM}Cache: {STATS_DIR}{RESET}\n")
+    print(f"  {DIM}Cache: stats/{RESET}\n")
     t0 = time.time()
     for i, name in enumerate(names, 1):
         if (STATS_DIR / f"{name}.csv").exists() and not args.refresh:
