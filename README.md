@@ -27,6 +27,7 @@
 - [Data](#data)
 - [Estimation scenarios](#estimation-scenarios)
 - [Caveats](#caveats)
+- [Support](#support)
 - [License](#license)
 
 ---
@@ -151,6 +152,16 @@ python analyze_investor.py "Warren Buffett" --mode worst
 ## Caveats
 
 We cannot always fetch price data from Yahoo Finance (e.g. delisted tickers, rate limits, or missing history). When that happens, **those stocks are skipped** and only positions with valid prices are used. As a result, stats (returns, win rate, rankings) can be based on a subset of an investor’s actual portfolio and may not reflect their full track record. Keep this in mind when comparing investors or interpreting metrics.
+
+---
+
+## Support
+
+If this project is useful to you, please **star the repo** on GitHub — it helps others discover it.
+
+You can also support further development:
+
+[<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="120" />](https://www.buymeacoffee.com/ShamelessCloner)
 
 ---
 
