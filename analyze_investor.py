@@ -17,6 +17,7 @@ from compute_stats import compute_stats
 
 warnings.filterwarnings("ignore")
 
+DATA_DIR  = Path(__file__).parent / "data"
 STATS_DIR = Path(__file__).parent / "stats"
 
 BOLD   = "\033[1m"
@@ -36,30 +37,57 @@ def color_pct(val: float, width: int = 8, inverse: bool = False) -> str:
     return f"{col}{txt:>{width}s}{RESET}"
 
 
+def _drop_invalid_costs(df: pd.DataFrame, min_cost: float = 0.1) -> pd.DataFrame:
+    mask = pd.Series(True, index=df.index)
+    for mode in ["best", "worst", "avg"]:
+        col = f"cost_{mode}"
+        if col in df.columns:
+            positive = df[col][df[col] > 0]
+            if positive.empty:
+                return df.iloc[0:0]
+            mask &= df[col].between(min_cost, positive.quantile(0.99) * 10, inclusive="both")
+    return df[mask]
+
+
 def load_or_fetch_stats(investor_name: str) -> pd.DataFrame:
-    cache = STATS_DIR / f"{investor_name}.csv"
-    if cache.exists():
-        print(f"  {DIM}Reading cached stats ({cache.name}){RESET}")
-        return pd.read_csv(cache)
-    print(f"  Fetching activity for {BOLD}{investor_name}{RESET} …")
-    df = get_investor_activity(investor_name)
-    df["stock"] = df["stock"].str.replace(".", "-", regex=False).str.upper()
-    print(f"  Enriching with Yahoo price data …")
-    df = add_yahoo_quarter_price_stats_batch(df)
-    df = df.dropna()
+    stats_cache = STATS_DIR / f"{investor_name}.csv"
+    if stats_cache.exists():
+        print(f"  {DIM}Reading cached stats ({stats_cache.name}){RESET}")
+        return _drop_invalid_costs(pd.read_csv(stats_cache))
+
+    data_cache = DATA_DIR / f"{investor_name}.csv"
+    if data_cache.exists():
+        print(f"  {DIM}Reading cached data ({data_cache.name}){RESET}")
+        df = pd.read_csv(data_cache)
+    else:
+        print(f"  Fetching activity for {BOLD}{investor_name}{RESET} …")
+        df = get_investor_activity(investor_name)
+        df["stock"] = df["stock"].str.replace(".", "-", regex=False).str.upper()
+        print(f"  Enriching with Yahoo price data …")
+        df = add_yahoo_quarter_price_stats_batch(df)
+        df = df.dropna()
+        DATA_DIR.mkdir(exist_ok=True)
+        df.to_csv(data_cache, index=False)
+        print(f"  {DIM}Saved data ({data_cache.name}){RESET}")
+
     print(f"  Computing per-trade stats …")
     stats = compute_stats(df)
     STATS_DIR.mkdir(exist_ok=True)
-    stats.to_csv(cache, index=False)
-    print(f"  {DIM}Cached ({cache.name}){RESET}\n")
-    return stats
+    stats.to_csv(stats_cache, index=False)
+    print(f"  {DIM}Cached stats ({stats_cache.name}){RESET}\n")
+    return _drop_invalid_costs(stats)
 
 
 def enrich_stats(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     for mode in ["avg", "worst", "best"]:
-        df[f"exit_{mode}"] = df[f"cost_{mode}"] * (1 + df[f"irr_{mode}"]) ** df.holding_period
         df[f"return_{mode}"] = (1 + df[f"irr_{mode}"]) ** df.holding_period - 1
+        ret_col = f"ret_{mode}"
+        if ret_col in df.columns:
+            df[f"dollar_return_{mode}"] = df[ret_col]
+        else:
+            df[f"dollar_return_{mode}"] = df[f"return_{mode}"]
+        df[f"exit_{mode}"] = df[f"cost_{mode}"] * (1 + df[f"dollar_return_{mode}"])
     df["cost_avg_pct"] = df.cost_avg / df.cost_avg.sum()
     return df
 
@@ -90,7 +118,6 @@ def _get_term_width() -> int:
 
 def print_section(title: str):
     print(f"\n  {BOLD}{CYAN}{title}{RESET}")
-    print(f"  {DIM}{'─' * 70}{RESET}")
 
 
 def print_overview(investor_name: str, stats: pd.DataFrame, mode: str):
@@ -98,10 +125,23 @@ def print_overview(investor_name: str, stats: pd.DataFrame, mode: str):
     winners = stats[stats[f"irr_{mode}"] > 0]
     losers = stats[stats[f"irr_{mode}"] <= 0]
     win_rate = len(winners) / n if n else 0
-    total_cost = stats[f"cost_{mode}"].sum()
+    col_cost = f"cost_{mode}"
+    col_dret = f"dollar_return_{mode}"
+    total_cost = stats[col_cost].sum()
     total_exit = stats[f"exit_{mode}"].sum()
     weighted_return = (total_exit - total_cost) / total_cost if total_cost else 0
-    cap_on_winners = winners[f"cost_{mode}"].sum() / total_cost if total_cost else 0
+    cap_on_winners = winners[col_cost].sum() / total_cost if total_cost else 0
+    weighted_irr = (stats[col_cost] * stats[f"irr_{mode}"]).sum() / total_cost if total_cost else 0
+    median_irr = stats[f"irr_{mode}"].median()
+    dollar_pnl = stats[col_cost] * stats[col_dret]
+    profits = dollar_pnl.clip(lower=0).sum()
+    losses_abs = abs(dollar_pnl.clip(upper=0).sum())
+    profit_factor = profits / losses_abs if losses_abs else float("nan")
+    irr_col = stats[f"irr_{mode}"]
+    w_irr, l_irr = irr_col[irr_col > 0], irr_col[irr_col <= 0]
+    expectancy = (len(w_irr) / n * w_irr.mean() - len(l_irr) / n * abs(l_irr.mean())) if n else 0
+    downside_std = irr_col[irr_col < 0].std()
+    sortino = median_irr / downside_std if downside_std and downside_std > 0 else float("nan")
     median_return = stats[f"return_{mode}"].median()
     median_return_w = winners[f"return_{mode}"].median() if len(winners) else float("nan")
     median_return_l = losers[f"return_{mode}"].median() if len(losers) else float("nan")
@@ -119,6 +159,14 @@ def print_overview(investor_name: str, stats: pd.DataFrame, mode: str):
         f"  W. Return:    {color_pct(weighted_return)}  {DIM}(capital-weighted){RESET}",
         f"  Cap% Winners: {color_pct(cap_on_winners)}  {DIM}(% capital on wins){RESET}",
         f"  Med. Holding: {BOLD}{median_holding:.1f}{RESET} yrs",
+        "",
+        f"  {BOLD}{CYAN}ANNUALIZED / RISK{RESET}",
+        f"  {DIM}{'─' * 50}{RESET}",
+        f"  Median IRR:   {color_pct(median_irr)}  {DIM}(per-trade ann.){RESET}",
+        f"  W. IRR:       {color_pct(weighted_irr)}  {DIM}(capital-weighted ann.){RESET}",
+        f"  Expectancy:   {color_pct(expectancy)}  {DIM}(expected ann. return/trade){RESET}",
+        f"  Profit Factor:{BOLD}{profit_factor:>7.2f}x{RESET}  {DIM}($ won / $ lost){RESET}" if not pd.isna(profit_factor) else f"  Profit Factor:{DIM}{'n/a':>8s}{RESET}",
+        f"  Sortino:      {BOLD}{sortino:>+7.2f}{RESET}   {DIM}(med. IRR / downside vol){RESET}" if not pd.isna(sortino) else f"  Sortino:      {DIM}{'n/a':>8s}{RESET}",
     ]
     right = [
         f"{BOLD}{CYAN}RETURN DISTRIBUTION{RESET}",
@@ -145,7 +193,7 @@ def print_overview(investor_name: str, stats: pd.DataFrame, mode: str):
 
 def _print_trade_table(df: pd.DataFrame, mode: str):
     TK_W, RET_W, IRR_W, COST_W, HP_W, POS_W, ST_W = 8, 10, 8, 10, 6, 8, 6
-    hdr = f"  {'Ticker':<{TK_W}s} │ {'Return':>{RET_W}s} │ {'IRR':>{IRR_W}s} │ {'Cost($M)':>{COST_W}s} │ {'Years':>{HP_W}s} │ {'Pos%':>{POS_W}s} │ {'Status':>{ST_W}s}"
+    hdr = f"{'Ticker':<{TK_W}s} │ {'Return':>{RET_W}s} │ {'IRR':>{IRR_W}s} │ {'Cost($M)':>{COST_W}s} │ {'Years':>{HP_W}s} │ {'Pos%':>{POS_W}s} │ {'Status':>{ST_W}s}"
     sep = "─" * (TK_W + 3 + RET_W + 3 + IRR_W + 3 + COST_W + 3 + HP_W + 3 + POS_W + 3 + ST_W)
     print(f"  {DIM}{hdr}{RESET}")
     print(f"  {DIM}{sep}{RESET}")

@@ -1,6 +1,12 @@
 import yfinance as yf
 import pandas as pd
 
+MAX_SANE_PRICE = 1_000_000
+
+
+def _sanitize_prices(prices):
+    return prices[(prices > 0) & (prices <= MAX_SANE_PRICE)]
+
 
 def add_yahoo_quarter_price_stats_batch(
     df,
@@ -23,6 +29,9 @@ def add_yahoo_quarter_price_stats_batch(
             progress=False,
             auto_adjust=True,
         )["Close"].dropna()
+        if isinstance(prices, pd.DataFrame):
+            prices = prices.iloc[:, 0]
+        prices = _sanitize_prices(prices)
         if prices.empty:
             q_stats = pd.DataFrame(
                 {

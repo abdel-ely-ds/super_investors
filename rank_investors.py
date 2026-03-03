@@ -12,6 +12,19 @@ pd.set_option("display.float_format", "{:.4f}".format)
 
 STATS_DIR = Path(__file__).parent / "stats"
 
+
+def _drop_invalid_costs(df: pd.DataFrame, min_cost: float = 0.1) -> pd.DataFrame:
+    mask = pd.Series(True, index=df.index)
+    for mode in ["best", "worst", "avg"]:
+        col = f"cost_{mode}"
+        if col in df.columns:
+            positive = df[col][df[col] > 0]
+            if positive.empty:
+                return df.iloc[0:0]
+            mask &= df[col].between(min_cost, positive.quantile(0.99) * 10, inclusive="both")
+    return df[mask]
+
+
 # ── metric functions ────────────────────────────────────────────────────
 
 def compute_win_rate(df: pd.DataFrame, mode: str) -> float:
@@ -22,10 +35,19 @@ def compute_percentage_capital_on_winning_stocks(df: pd.DataFrame, mode: str) ->
     return df.loc[df[f"irr_{mode}"] >= 0, f"cost_{mode}"].sum() / df[f"cost_{mode}"].sum()
 
 
+def _get_dollar_return(df: pd.DataFrame, mode: str) -> pd.Series:
+    """Actual dollar return per trade (total_inflows / cost - 1)."""
+    ret_col = f"ret_{mode}"
+    if ret_col in df.columns:
+        return df[ret_col]
+    return (1 + df[f"irr_{mode}"]) ** df.holding_period - 1
+
+
 def compute_weighted_return(df: pd.DataFrame, mode: str) -> float:
-    tmp = df.copy()
-    tmp["ending_value"] = tmp[f"cost_{mode}"] * (1 + tmp[f"irr_{mode}"]) ** tmp.holding_period
-    return (tmp["ending_value"].sum() - tmp[f"cost_{mode}"].sum()) / tmp[f"cost_{mode}"].sum()
+    dollar_ret = _get_dollar_return(df, mode)
+    total_cost = df[f"cost_{mode}"].sum()
+    total_exit = (df[f"cost_{mode}"] * (1 + dollar_ret)).sum()
+    return (total_exit - total_cost) / total_cost
 
 
 def compute_median_return(df: pd.DataFrame, mode: str) -> float:
@@ -46,6 +68,45 @@ def compute_median_return_on_losers(df: pd.DataFrame, mode: str) -> float:
     return tmp.loc[tmp["total_return"] < 0, "total_return"].median()
 
 
+def compute_median_irr(df: pd.DataFrame, mode: str) -> float:
+    return df[f"irr_{mode}"].median()
+
+
+def compute_weighted_irr(df: pd.DataFrame, mode: str) -> float:
+    total_cost = df[f"cost_{mode}"].sum()
+    if total_cost == 0:
+        return float("nan")
+    return (df[f"cost_{mode}"] * df[f"irr_{mode}"]).sum() / total_cost
+
+
+def compute_profit_factor(df: pd.DataFrame, mode: str) -> float:
+    dollar_pnl = df[f"cost_{mode}"] * _get_dollar_return(df, mode)
+    profits = dollar_pnl.clip(lower=0).sum()
+    losses = dollar_pnl.clip(upper=0).sum()
+    if losses == 0:
+        return float("nan")
+    return profits / abs(losses)
+
+
+def compute_expectancy(df: pd.DataFrame, mode: str) -> float:
+    irr = df[f"irr_{mode}"]
+    winners = irr[irr > 0]
+    losers = irr[irr <= 0]
+    win_rate = len(winners) / len(irr) if len(irr) else 0
+    avg_win = winners.mean() if len(winners) else 0
+    avg_loss = abs(losers.mean()) if len(losers) else 0
+    return win_rate * avg_win - (1 - win_rate) * avg_loss
+
+
+def compute_sortino(df: pd.DataFrame, mode: str) -> float:
+    irr = df[f"irr_{mode}"]
+    median_irr = irr.median()
+    downside = irr[irr < 0]
+    if downside.empty or downside.std() == 0:
+        return float("nan")
+    return median_irr / downside.std()
+
+
 # ── build the full comparison table ─────────────────────────────────────
 
 SORTABLE_METRICS = [
@@ -53,6 +114,11 @@ SORTABLE_METRICS = [
     "Pct_Capital_Winning_Stocks",
     "Median_Return",
     "Weighted_Return",
+    "Median_IRR",
+    "Weighted_IRR",
+    "Profit_Factor",
+    "Expectancy",
+    "Sortino",
     "Median_Return_Winners",
     "Median_Return_Losers",
     "Sizing_Skill",
@@ -64,7 +130,7 @@ def build_investor_stats(mode: str = "avg", after_year: int | None = None) -> pd
     rows = []
     for csv_path in sorted(STATS_DIR.glob("*.csv")):
         investor_name = csv_path.stem
-        df = pd.read_csv(csv_path)
+        df = _drop_invalid_costs(pd.read_csv(csv_path))
         if df.empty:
             continue
         if after_year is not None and "period" in df.columns:
@@ -79,6 +145,11 @@ def build_investor_stats(mode: str = "avg", after_year: int | None = None) -> pd
             "Pct_Capital_Winning_Stocks": compute_percentage_capital_on_winning_stocks(df, mode),
             "Median_Return": compute_median_return(df, mode),
             "Weighted_Return": compute_weighted_return(df, mode),
+            "Median_IRR": compute_median_irr(df, mode),
+            "Weighted_IRR": compute_weighted_irr(df, mode),
+            "Profit_Factor": compute_profit_factor(df, mode),
+            "Expectancy": compute_expectancy(df, mode),
+            "Sortino": compute_sortino(df, mode),
             "Median_Return_Winners": compute_median_return_on_winners(df, mode),
             "Median_Return_Losers": compute_median_return_on_losers(df, mode),
         })
@@ -107,11 +178,19 @@ METRIC_LABELS = {
     "Pct_Capital_Winning_Stocks":   "Cap % on Winners",
     "Median_Return":                "Median Return",
     "Weighted_Return":              "Weighted Return",
+    "Median_IRR":                   "Median IRR",
+    "Weighted_IRR":                 "Weighted IRR",
+    "Profit_Factor":                "Profit Factor",
+    "Expectancy":                   "Expectancy",
+    "Sortino":                      "Sortino Ratio",
     "Median_Return_Winners":        "Med. Return (W)",
     "Median_Return_Losers":         "Med. Return (L)",
     "Sizing_Skill":                 "Sizing Skill",
     "Safety_And_Returns":           "Safety & Returns",
 }
+
+
+RATIO_METRICS = {"Profit_Factor", "Sortino"}
 
 
 def color_pct(val: float, width: int = 8, inverse: bool = False) -> str:
@@ -123,6 +202,14 @@ def color_pct(val: float, width: int = 8, inverse: bool = False) -> str:
         col = RED if pct >= 0 else GREEN
     else:
         col = GREEN if pct >= 0 else RED
+    return f"{col}{txt:>{width}s}{RESET}"
+
+
+def color_ratio(val: float, width: int = 8) -> str:
+    if pd.isna(val):
+        return f"{DIM}{'n/a':>{width}s}{RESET}"
+    txt = f"{val:+.2f}x"
+    col = GREEN if val >= 1 else RED
     return f"{col}{txt:>{width}s}{RESET}"
 
 
@@ -178,6 +265,7 @@ def print_ranking_block(title: str, df: pd.DataFrame, metric: str, *, is_top: bo
     print(f"  {DIM}{hdr}{RESET}")
     print(f"  {DIM}{sep}{RESET}")
     is_loser_metric = metric == "Median_Return_Losers"
+    fmt_main = color_ratio if metric in RATIO_METRICS else lambda v, w: color_pct(v, w, inverse=is_loser_metric)
     for i, (_, row) in enumerate(df.iterrows()):
         investor = row["Investor"]
         trades = int(row["Num_Trades"])
@@ -189,9 +277,10 @@ def print_ranking_block(title: str, df: pd.DataFrame, metric: str, *, is_top: bo
         if len(investor) > INV_W:
             investor = investor[: INV_W - 1] + "…"
         inv_cell = _pad_right(investor, INV_W)
-        line = f"  {rank_cell}{inv_cell} │ {color_pct(row[metric], MAIN_W, inverse=is_loser_metric)}"
+        line = f"  {rank_cell}{inv_cell} │ {fmt_main(row[metric], MAIN_W)}"
         for col_key, _, inverse in secondary:
-            line += f" │ {color_pct(row[col_key], COL_W, inverse=inverse)}"
+            fmt = color_ratio if col_key in RATIO_METRICS else lambda v, w, inv=inverse: color_pct(v, w, inverse=inv)
+            line += f" │ {fmt(row[col_key], COL_W)}"
         line += f" │ {DIM}{trades:>{TRADE_W}d}{RESET}"
         print(line)
     print()
