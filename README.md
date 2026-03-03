@@ -50,7 +50,8 @@ Pre-built stats for **81 investors** are included in `stats.zip`; no fetch requi
 
 ```bash
 # 1. Unzip pre-built stats (81 investors, updated 2026-02-18)
-unzip stats.zip
+unzip -o stats.zip
+unzip -o data.zip
 
 # 2. Install dependencies
 pip install -r requirements.txt
