@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from compute_stats import compute_stats
+from trade_stats import compute_stats
 
 warnings.filterwarnings("ignore")
 

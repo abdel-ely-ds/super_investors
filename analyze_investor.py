@@ -13,7 +13,7 @@ import numpy as np
 
 from dataroma import get_investor_activity
 from yahoo import add_yahoo_quarter_price_stats_batch
-from compute_stats import compute_stats
+from trade_stats import compute_stats
 
 warnings.filterwarnings("ignore")
 
