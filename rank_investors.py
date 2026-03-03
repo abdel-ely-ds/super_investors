@@ -32,7 +32,7 @@ def compute_win_rate(df: pd.DataFrame, mode: str) -> float:
 
 
 def compute_percentage_capital_on_winning_stocks(df: pd.DataFrame, mode: str) -> float:
-    return df.loc[df[f"irr_{mode}"] >= 0, f"cost_{mode}"].sum() / df[f"cost_{mode}"].sum()
+    return df.loc[df[f"irr_{mode}"] > 0, f"cost_{mode}"].sum() / df[f"cost_{mode}"].sum()
 
 
 def _get_dollar_return(df: pd.DataFrame, mode: str) -> pd.Series:

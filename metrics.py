@@ -1,11 +1,6 @@
 from datetime import datetime
 
 
-def compute_irr(profits, costs, holding_period):
-    x = (1 + profits / costs)
-    return -1 + x ** (1 / holding_period)
-
-
 def quarter_to_date(q_str: str) -> datetime:
     """Convert 'Q1 2020' to a mid-quarter datetime."""
     quarter_part, year_str = q_str.split()
